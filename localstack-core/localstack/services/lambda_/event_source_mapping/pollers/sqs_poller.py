@@ -142,7 +142,6 @@ class SqsPoller(Poller):
         # NOTE: If a batch is collected, this will send a single collected batch for each poll call.
         # Increasing the poller frequency _should_ influence the rate of collection but this has not
         # yet been investigated.
-        # messages = next(self.collector)
         if messages:
             LOG.debug("Polled %d events from %s", len(messages), self.source_arn)
             try:
