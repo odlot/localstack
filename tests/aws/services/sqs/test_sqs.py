@@ -29,6 +29,7 @@ from localstack.utils.aws import arns
 from localstack.utils.aws.arns import get_partition
 from localstack.utils.aws.request_context import mock_aws_request_headers
 from localstack.utils.common import poll_condition, retry, short_uid, to_str
+from localstack.utils.strings import md5
 from localstack.utils.urls import localstack_host
 from tests.aws.services.lambda_.functions import lambda_integration
 from tests.aws.services.lambda_.test_lambda import TEST_LAMBDA_PYTHON
@@ -142,6 +143,41 @@ class TestSqsProvider:
         # list queues with empty result
         result = aws_client.sqs.list_queues(QueueNamePrefix="nonexisting-queue-")
         assert "QueueUrls" not in result
+
+    @markers.aws.only_localstack
+    def test_list_queues_with_max_results(self, sqs_create_queue, aws_client):
+        queue_names = []
+        for i in range(256):
+            queue_names.append(f"a-test-queue-{i}-{short_uid()}")
+
+        queue_urls = []
+        for name in queue_names:
+            sqs_create_queue(QueueName=name)
+            queue_url = aws_client.sqs.get_queue_url(QueueName=name)["QueueUrl"]
+            assert queue_url.endswith(name)
+            queue_urls.append(queue_url)
+
+        result = aws_client.sqs.list_queues(MaxResults=100)
+        assert "QueueUrls" in result
+        assert len(result["QueueUrls"]) == 100
+        assert "NextToken" in result
+        assert md5(queue_urls[100]) == result["NextToken"]
+        result = aws_client.sqs.list_queues(MaxResults=100, NextToken=result["NextToken"])
+        assert "QueueUrls" in result
+        assert len(result["QueueUrls"]) == 100
+        assert queue_urls[0] not in result["QueueUrls"]
+        assert "NextToken" in result
+        assert md5(queue_urls[200]) == result["NextToken"]
+        result = aws_client.sqs.list_queues(MaxResults=100, NextToken=result["NextToken"])
+        assert "QueueUrls" in result
+        assert len(result["QueueUrls"]) == 56
+
+    @markers.aws.only_localstack
+    def test_list_queues_with_max_results_raises_exception(self, sqs_create_queue, aws_client):
+        with pytest.raises(ClientError):
+            aws_client.sqs.list_queues(MaxResults=0)
+        with pytest.raises(ClientError):
+            aws_client.sqs.list_queues(MaxResults=1001)
 
     @markers.aws.validated
     def test_create_queue_and_get_attributes(self, sqs_queue, aws_sqs_client):

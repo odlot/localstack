@@ -104,6 +104,7 @@ from localstack.utils.cloudwatch.cloudwatch_util import (
     publish_sqs_metric,
     publish_sqs_metric_batch,
 )
+from localstack.utils.collections import PaginatedList
 from localstack.utils.run import FuncThread
 from localstack.utils.scheduler import Scheduler
 from localstack.utils.strings import md5
@@ -963,26 +964,36 @@ class SqsProvider(SqsApi, ServiceLifecycleHook):
     ) -> ListQueuesResult:
         store = self.get_store(context.account_id, context.region)
 
-        if queue_name_prefix:
-            urls = [
-                queue.url(context)
-                for queue in store.queues.values()
-                if queue.name.startswith(queue_name_prefix)
-            ]
-        else:
-            urls = [queue.url(context) for queue in store.queues.values()]
+        if max_results is not None and (max_results < 1 or max_results > 1000):
+            raise InvalidParameterValueException(
+                f"Value {max_results} for parameter MaxResults is invalid. Reason: Invalid value for "
+                f"MaxResults: {max_results}, valid values are from 1 to 1000 both inclusive."
+            )
 
-        if max_results:
-            # FIXME: also need to solve pagination with stateful iterators: If the total number of items available is
-            #  more than the value specified, a NextToken is provided in the command's output. To resume pagination,
-            #  provide the NextToken value in the starting-token argument of a subsequent command. Do not use the
-            #  NextToken response element directly outside of the AWS CLI.
-            urls = urls[:max_results]
+        if queue_name_prefix:
+            urls = PaginatedList(
+                [
+                    queue.url(context)
+                    for queue in store.queues.values()
+                    if queue.name.startswith(queue_name_prefix)
+                ]
+            )
+        else:
+            urls = PaginatedList([queue.url(context) for queue in store.queues.values()])
 
         if len(urls) == 0:
             return ListQueuesResult()
 
-        return ListQueuesResult(QueueUrls=urls)
+        def token_generator(queue_url: str) -> str:
+            return md5(queue_url)
+
+        paginated_urls, next_token_result = urls.get_page(
+            token_generator=token_generator,
+            next_token=next_token,
+            page_size=max_results,
+        )
+
+        return ListQueuesResult(NextToken=next_token_result, QueueUrls=paginated_urls)
 
     def change_message_visibility(
         self,

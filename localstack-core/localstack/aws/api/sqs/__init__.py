@@ -2,6 +2,7 @@ from enum import StrEnum
 from typing import Dict, List, Optional, TypedDict
 
 from localstack.aws.api import RequestContext, ServiceException, ServiceRequest, handler
+from localstack.utils.collections import PaginatedList
 
 Boolean = bool
 BoxedInteger = int
@@ -366,6 +367,7 @@ class ListDeadLetterSourceQueuesRequest(ServiceRequest):
 
 
 QueueUrlList = List[String]
+PaginatedQueueUrlList = PaginatedList[QueueUrlList]
 
 
 class ListDeadLetterSourceQueuesResult(TypedDict, total=False):
@@ -415,8 +417,8 @@ class ListQueuesRequest(ServiceRequest):
 
 
 class ListQueuesResult(TypedDict, total=False):
-    QueueUrls: Optional[QueueUrlList]
     NextToken: Optional[Token]
+    QueueUrls: Optional[PaginatedQueueUrlList]
 
 
 StringList = List[String]
